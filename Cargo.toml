@@ -1,0 +1,24 @@
+[package]
+name = "codex-hello-server"
+version = "1.1.1"
+edition = "2024"
+
+[dependencies]
+async-nats = "0.44"
+aws-config = "1"
+aws-credential-types = "1"
+aws-sdk-s3 = "1"
+axum = "0.8"
+bytes = "1"
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1

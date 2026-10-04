@@ -1,0 +1,156 @@
+# 概要:
+#   default Namespace に RustFS と NATS の疎通を確認する Web アプリを構築します。
+#   RustFS は固定 bucket `/test` のみ、NATS は固定 subject
+#   `test.codex-hello-server` のみをテストに使用します。
+#
+# 構成:
+#   - Deployment `codex-hello-server`: Rust バックエンドと静的 HTML、3 replicas
+#   - NodePort Service `codex-hello-server`: HTTP 8000、NodePort 30800
+#
+# 前提条件:
+#   - 対象 Namespace は `default` です。
+#   - GitHub Actions が `ghcr.io/uiui611/hello-private-server:main` を公開していること。
+#     GHCR パッケージは public とし、ノードから認証なしで取得できるようにします。
+#   - RustFS Service `rustfs:9000` と Secret `rustfs-credentials` が必要です。
+#     Secret の必須キーは `RUSTFS_ACCESS_KEY` と `RUSTFS_SECRET_KEY` です。
+#   - NATS Service `nats:4222` と Secret `nats-auth` が必要です。
+#     Secret の必須キーは `username` と `password` です。
+#
+# 適用後の確認:
+#   kubectl rollout status deployment/codex-hello-server -n default
+#   curl http://<node-address>:30800/codex-hello-server/healthz
+#
+# 注意事項:
+#   - main タグは可変です。main の更新後、webhook が Pod を再作成して新しいイメージを取得します。
+#   - 初回の RustFS テスト時に bucket `test` を作成します。その他の bucket へは書き込みません。
+#   - NATS のサーバー設定や JetStream Stream は変更・作成しません。
+#   - NodePort 30800 はプライベート LAN から到達可能になるため公開範囲に注意してください。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: codex-hello-server
+  namespace: default
+  labels:
+    app: codex-hello-server
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # 3ノードへ必須分散するため、4個目のPodを先に作ることはできません。
+      maxUnavailable: 1
+      maxSurge: 0
+  selector:
+    matchLabels:
+      app: codex-hello-server
+  template:
+    metadata:
+      labels:
+        app: codex-hello-server
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: codex-hello-server
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: codex-hello-server
+          image: ghcr.io/uiui611/hello-private-server:main
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: APP_BASE_PATH
+              value: /codex-hello-server
+            - name: RUST_LOG
+              value: codex_hello_server=info,tower_http=info
+            - name: RUSTFS_ENDPOINT
+              value: http://rustfs.default.svc.cluster.local:9000
+            - name: RUSTFS_REGION
+              value: us-east-1
+            - name: RUSTFS_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: RUSTFS_ACCESS_KEY
+            - name: RUSTFS_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rustfs-credentials
+                  key: RUSTFS_SECRET_KEY
+            - name: NATS_URL
+              value: nats://nats.default.svc.cluster.local:4222
+            - name: NATS_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: nats-auth
+                  key: username
+            - name: NATS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nats-auth
+                  key: password
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /codex-hello-server/healthz
+              port: http
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /codex-hello-server/healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /codex-hello-server/healthz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 2
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: codex-hello-server
+  namespace: default
+  labels:
+    app: codex-hello-server
+spec:
+  type: NodePort
+  selector:
+    app: codex-hello-server
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+      protocol: TCP
+      nodePort: 30800

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RustFS / NATS 動作確認</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+    body { max-width: 860px; margin: 0 auto; padding: 2rem 1rem; background: #10141c; color: #e8edf5; }
+    h1 { margin-bottom: .3rem; } .lead { color: #aab6c8; margin-top: 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; }
+    section { background: #19212d; border: 1px solid #344154; border-radius: 12px; padding: 1.2rem; }
+    label { display: block; margin: .8rem 0 .3rem; color: #bdc8d8; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: .65rem; border: 1px solid #506078; border-radius: 6px; background: #101722; color: inherit; }
+    textarea { min-height: 100px; resize: vertical; }
+    button { margin-top: .8rem; padding: .65rem 1rem; border: 0; border-radius: 6px; background: #55b2ff; color: #07111d; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: wait; }
+    pre { min-height: 3rem; overflow: auto; white-space: pre-wrap; background: #0d131c; padding: .8rem; border-radius: 6px; }
+    .ok { color: #70e1a1; } .ng { color: #ff8f8f; } code { color: #8ecbff; }
+  </style>
+</head>
+<body>
+  <h1>RustFS / NATS 動作確認</h1>
+  <p class="lead">テスト専用の保存先と subject だけを使用します。</p>
+  <section>
+    <h2>接続状態</h2>
+    <button id="refresh">再確認</button>
+    <pre id="status">確認中…</pre>
+  </section>
+  <div class="grid">
+    <section>
+      <h2>RustFS</h2>
+      <p>保存先: <code>/test/&lt;ファイル名&gt;</code></p>
+      <label for="filename">ファイル名</label>
+      <input id="filename" value="hello.txt" maxlength="120">
+      <label for="content">内容</label>
+      <textarea id="content">Hello from codex-hello-server!</textarea>
+      <button id="rustfs-test">書き込み → 読み取り</button>
+      <pre id="rustfs-result">未実行</pre>
+    </section>
+    <section>
+      <h2>NATS</h2>
+      <p>subject: <code>test.codex-hello-server</code></p>
+      <label for="message">メッセージ</label>
+      <textarea id="message">Hello NATS!</textarea>
+      <button id="nats-test">publish → subscribe</button>
+      <pre id="nats-result">未実行</pre>
+    </section>
+  </div>
+  <script>
+    const baseUrl = `${window.location.pathname.replace(/\/$/, '')}/`;
+    async function call(path, options, output, button) {
+      button.disabled = true; output.textContent = '実行中…'; output.className = '';
+      try {
+        const response = await fetch(`${baseUrl}${path}`, options);
+        const body = await response.json();
+        output.textContent = JSON.stringify(body, null, 2);
+        output.className = response.ok ? 'ok' : 'ng';
+      } catch (error) { output.textContent = String(error); output.className = 'ng'; }
+      finally { button.disabled = false; }
+    }
+    const refresh = document.querySelector('#refresh');
+    const status = document.querySelector('#status');
+    refresh.onclick = () => call('api/status', {}, status, refresh);
+    const rustfsButton = document.querySelector('#rustfs-test');
+    rustfsButton.onclick = () => call('api/rustfs', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({filename: document.querySelector('#filename').value, content: document.querySelector('#content').value})
+    }, document.querySelector('#rustfs-result'), rustfsButton);
+    const natsButton = document.querySelector('#nats-test');
+    natsButton.onclick = () => call('api/nats', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({message: document.querySelector('#message').value})
+    }, document.querySelector('#nats-result'), natsButton);
+    refresh.click();
+  </script>
+</body>
+</html>

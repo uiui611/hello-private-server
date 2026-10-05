@@ -1,0 +1,18 @@
+{
+  "timezone": "Asia/Tokyo",
+  "state_dir": "/var/lib/resource-reports",
+  "servers": [
+    {"name": "ubuntu", "kind": "host"},
+    {"name": "cp1", "kind": "vm", "ssh": "mizu@192.168.101.10"},
+    {"name": "worker1", "kind": "vm", "ssh": "mizu@192.168.101.11"},
+    {"name": "worker2", "kind": "vm", "ssh": "mizu@192.168.101.12"},
+    {"name": "worker3", "kind": "vm", "ssh": "mizu@192.168.101.13"}
+  ],
+  "database": {
+    "ssh": "mizu@192.168.101.10",
+    "namespace": "default",
+    "pod": "yb-tserver-0",
+    "name": "resource_reports",
+    "user": "resource_report_writer"
+  }
+}

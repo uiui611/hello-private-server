@@ -1,0 +1,9 @@
+[Unit]
+Description=Save yesterday's resource reports at 00:15 Japan time
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 Asia/Tokyo
+Persistent=true
+
+[Install]
+WantedBy=timers.target

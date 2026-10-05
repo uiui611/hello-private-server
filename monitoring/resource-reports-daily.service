@@ -1,0 +1,24 @@
+[Unit]
+Description=Save daily resource reports to YugabyteDB
+After=network-online.target resource-reports-collect.service
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=mizu
+Group=mizu
+Environment=LC_ALL=C
+ExecStart=/usr/bin/python3 /opt/resource-reports/monitor.py report
+StateDirectory=resource-reports
+StateDirectoryMode=0700
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+TimeoutStartSec=15min
+Restart=on-failure
+RestartSec=15min

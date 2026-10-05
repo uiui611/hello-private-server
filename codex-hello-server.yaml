@@ -15,6 +15,8 @@
 #     Secret の必須キーは `RUSTFS_ACCESS_KEY` と `RUSTFS_SECRET_KEY` です。
 #   - NATS Service `nats:4222` と Secret `nats-auth` が必要です。
 #     Secret の必須キーは `username` と `password` です。
+#   - YugabyteDB `yb-tservers:5433` の resource_reports DB と読み取り専用ロールが必要です。
+#     monitoring/schema.sql を適用し、Secret `resource-reports-reader` の `password` を用意します。
 #
 # 適用後の確認:
 #   kubectl rollout status deployment/codex-hello-server -n default
@@ -74,6 +76,13 @@ spec:
               drop:
                 - ALL
           env:
+            - name: REPORTS_DB_HOST
+              value: yb-tservers.default.svc.cluster.local
+            - name: REPORTS_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: resource-reports-reader
+                  key: password
             - name: APP_BASE_PATH
               value: /codex-hello-server
             - name: RUST_LOG

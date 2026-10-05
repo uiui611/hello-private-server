@@ -18,6 +18,8 @@ use tokio::net::TcpListener;
 use tracing::{error, info};
 use uuid::Uuid;
 
+mod reports;
+
 const TEST_BUCKET: &str = "test";
 const TEST_SUBJECT: &str = "test.codex-hello-server";
 const MAX_CONTENT_BYTES: usize = 64 * 1024;
@@ -28,6 +30,7 @@ struct AppState {
     nats_url: String,
     nats_username: String,
     nats_password: String,
+    reports_database: Option<tokio_postgres::Config>,
 }
 
 #[derive(Debug)]
@@ -96,6 +99,7 @@ async fn main() {
         .route("/api/status", get(status))
         .route("/api/rustfs", post(test_rustfs))
         .route("/api/nats", post(test_nats))
+        .route("/api/reports", get(reports::list))
         .with_state(state);
     let app = if base_path.is_empty() {
         routes
@@ -135,6 +139,7 @@ async fn build_state() -> Result<AppState, String> {
         nats_url: required_env("NATS_URL")?,
         nats_username: required_env("NATS_USERNAME")?,
         nats_password: required_env("NATS_PASSWORD")?,
+        reports_database: reports::configuration()?,
     })
 }
 

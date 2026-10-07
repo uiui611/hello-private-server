@@ -1,0 +1,21 @@
+[Unit]
+Description=Collect host and VM resource statistics
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mizu
+Group=mizu
+Environment=LC_ALL=C
+ExecStart=/usr/bin/python3 /opt/resource-reports/monitor.py collect
+StateDirectory=resource-reports
+StateDirectoryMode=0700
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+TimeoutStartSec=8min

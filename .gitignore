@@ -7,3 +7,6 @@
 kubeconfig*
 .kube/
 *.log
+/monitoring/config.json
+__pycache__/
+*.pyc

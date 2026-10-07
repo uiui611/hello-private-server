@@ -4,6 +4,7 @@ RustFS と NATS の動作確認用 Web アプリです。アプリと Kubernetes
 
 - RustFS: 固定 bucket `test` へテキストを書き込み、直後に読み戻します。初回書き込み時に bucket を作成します。
 - NATS: 固定 subject `test.codex-hello-server` を購読し、メッセージを publish して受信します。
+- 日次レポート: Ubuntu ホストと VM の CPU・メモリ・スワップ・ディスク残量を日別に比較します。集計日は日本時間で、直近7日分を表示します。
 
 保存先や subject を変更する API はありません。入力サイズは 64 KiB までです。NATS は Core NATS の publish/subscribe を利用し、JetStream の設定は変更しません。
 
@@ -30,6 +31,9 @@ docker build -t hello-private-server:local .
 | --- | --- | --- |
 | RustFS (`rustfs:9000`) | `rustfs-credentials` | `RUSTFS_ACCESS_KEY`, `RUSTFS_SECRET_KEY` |
 | NATS (`nats:4222`) | `nats-auth` | `username`, `password` |
+| YugabyteDB (`yb-tservers:5433`) | `resource-reports-reader` | `password` |
+
+日次レポートには専用 DB `resource_reports` と SELECT のみを許可した `resource_report_reader` を使用します。[監視サービスの導入手順](monitoring/README.md)を先に実施してください。Web は `REPORTS_DB_HOST`、`REPORTS_DB_PORT`（既定5433）、`REPORTS_DB_PASSWORD` から接続します。`REPORTS_DB_HOST` が未設定の場合、既存機能は動作し、レポート欄には未設定の案内を表示します。DB 障害時もレポート API だけが503となり、プロセスのヘルスチェックには影響しません。
 
 ```sh
 kubectl apply --dry-run=server -n default -f codex-hello-server.yaml
@@ -45,5 +49,6 @@ kubectl rollout status deployment/codex-hello-server -n default
 
 - `GET <base-path>/healthz`: アプリプロセスのヘルスチェック
 - `GET <base-path>/api/status`: RustFS と NATS の接続確認
+- `GET <base-path>/api/reports`: 直近7つの完了日のレポート。固定範囲の読み取り専用 API（最大350件）です。
 - `POST <base-path>/api/rustfs`: `{"filename":"hello.txt","content":"hello"}`
 - `POST <base-path>/api/nats`: `{"message":"hello"}`

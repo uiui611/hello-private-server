@@ -1,0 +1,10 @@
+[Unit]
+Description=Collect resource statistics every ten minutes
+
+[Timer]
+OnCalendar=*-*-* *:02/10:00
+Persistent=true
+RandomizedDelaySec=20
+
+[Install]
+WantedBy=timers.target

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>RustFS / NATS 動作確認</title>
+  <title>サーバー日次レポート / RustFS / NATS</title>
   <style>
     :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
     body { max-width: 860px; margin: 0 auto; padding: 2rem 1rem; background: #10141c; color: #e8edf5; }
@@ -17,10 +17,34 @@
     button:disabled { opacity: .5; cursor: wait; }
     pre { min-height: 3rem; overflow: auto; white-space: pre-wrap; background: #0d131c; padding: .8rem; border-radius: 6px; }
     .ok { color: #70e1a1; } .ng { color: #ff8f8f; } code { color: #8ecbff; }
+    .reports { margin-bottom: 1.5rem; }
+    .filters { display: flex; flex-wrap: wrap; align-items: end; gap: 1rem; }
+    .filters label { margin: 0; } select { display: block; margin-top: .4rem; padding: .6rem; background: #101722; color: inherit; border: 1px solid #506078; border-radius: 6px; }
+    .table-scroll { overflow-x: auto; margin-top: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: .7rem .5rem; border-bottom: 1px solid #344154; vertical-align: top; white-space: nowrap; }
+    th { color: #bdc8d8; } .muted { color: #aab6c8; font-size: .85rem; }
+    .bar { height: 5px; background: #344154; border-radius: 4px; margin-top: .4rem; width: 110px; }
+    .bar > span { display: block; background: #55b2ff; height: 100%; border-radius: inherit; }
+    .coverage-low { color: #ffd28e; } details { margin-top: 1rem; } summary { cursor: pointer; }
+    .report-note { line-height: 1.7; }
   </style>
 </head>
 <body>
-  <h1>RustFS / NATS 動作確認</h1>
+  <h1>サーバー日次レポート</h1>
+  <p class="lead">Ubuntu ホストと仮想サーバーの、直近7日間の利用状況です。</p>
+  <section class="reports" aria-labelledby="reports-heading">
+    <h2 id="reports-heading">1日のリソース使用状況</h2>
+    <div class="filters">
+      <label>集計日（日本時間）<select id="report-day"></select></label>
+      <label>サーバー<select id="report-server"><option value="">すべて</option></select></label>
+      <button id="reports-refresh">再読み込み</button>
+    </div>
+    <p id="reports-status" role="status" aria-live="polite">レポートを読み込み中…</p>
+    <div id="reports-output"></div>
+    <p class="muted report-note">前日分を毎日 00:15 に保存します（日本時間）。CPU 最大は約10分間の平均値の最大で、瞬間的なピークではありません。メモリは利用可能量を差し引いた使用量です。ディスク残量は最後の計測値で、詳細から当日の最小残量も確認できます。ホストと VM の数値は重複するため、合算しません。</p>
+  </section>
+  <h2>RustFS / NATS 動作確認</h2>
   <p class="lead">テスト専用の保存先と subject だけを使用します。</p>
   <section>
     <h2>接続状態</h2>
@@ -73,6 +97,107 @@
       body: JSON.stringify({message: document.querySelector('#message').value})
     }, document.querySelector('#nats-result'), natsButton);
     refresh.click();
+  </script>
+  <script>
+    (() => {
+      const daySelect = document.querySelector('#report-day');
+      const serverSelect = document.querySelector('#report-server');
+      const reload = document.querySelector('#reports-refresh');
+      const message = document.querySelector('#reports-status');
+      const output = document.querySelector('#reports-output');
+      let reports = [];
+      const make = (tag, text, className) => {
+        const element = document.createElement(tag);
+        if (text !== undefined) element.textContent = text;
+        if (className) element.className = className;
+        return element;
+      };
+      const bytes = value => value == null ? '—' : `${(value / 1073741824).toFixed(2)} GiB`;
+      const percent = value => value == null ? '—' : `${value.toFixed(1)}%`;
+      const change = value => value == null ? '比較なし' : `${value >= 0 ? '+' : ''}${(value / 1073741824).toFixed(2)} GiB`;
+      function table(headers) {
+        const wrap = make('div', undefined, 'table-scroll');
+        const table = make('table');
+        const head = make('thead'); const row = make('tr');
+        headers.forEach(label => { const th = make('th', label); th.scope = 'col'; row.append(th); });
+        head.append(row); const body = make('tbody');
+        table.append(head, body); wrap.append(table);
+        return [wrap, body];
+      }
+      function render() {
+        output.replaceChildren();
+        const rows = reports.filter(r => r.report_date === daySelect.value && (!serverSelect.value || r.server === serverSelect.value));
+        if (!rows.length) {
+          message.textContent = 'この日のレポートはまだありません。収集開始前の日や保存待ちの日は表示されません。';
+          return;
+        }
+        const incomplete = rows.some(r => r.coverage_percent < 95);
+        message.className = incomplete ? 'coverage-low' : 'muted';
+        message.textContent = `${rows.length} 台のレポート${incomplete ? '・一部のサーバーに欠測があります' : ''}。平均は取得できた区間から算出しています。`;
+        const [wrap, body] = table(['サーバー', 'CPU 平均 / 最大', 'メモリ 平均 / 最大', '最小利用可能量', 'スワップ 最大', '/ の残量 / 前日比', '収集率']);
+        for (const report of rows) {
+          const tr = make('tr');
+          const name = make('td', report.server); name.append(make('div', report.kind === 'host' ? 'ホスト' : '仮想サーバー', 'muted'));
+          const cpu = make('td', `${percent(report.cpu.average_percent)} / ${percent(report.cpu.max_percent)}`);
+          const bar = make('div', undefined, 'bar'); const fill = make('span');
+          fill.style.width = `${Math.max(0, Math.min(100, report.cpu.average_percent ?? 0))}%`; bar.append(fill); cpu.append(bar);
+          const root = report.storage.find(m => m.mount === '/');
+          const disk = make('td', root ? `${bytes(root.free_bytes)} (${percent(root.used_percent)} 使用)` : '未計測');
+          if (root) disk.append(make('div', `前日比 ${change(root.free_change_bytes)}`, 'muted'));
+          const coverage = make('td', percent(report.coverage_percent), report.coverage_percent < 95 ? 'coverage-low' : '');
+          coverage.append(make('div', `${report.samples} 区間`, 'muted'));
+          tr.append(name, cpu, make('td', `${bytes(report.memory.average_used_bytes)} / ${bytes(report.memory.max_used_bytes)}`),
+            make('td', bytes(report.memory.min_available_bytes)), make('td', bytes(report.swap.max_used_bytes)), disk, coverage);
+          body.append(tr);
+        }
+        output.append(wrap);
+        for (const report of rows) {
+          const details = make('details'); details.append(make('summary', `${report.server} のディスク詳細・計測情報`));
+          details.append(make('p', `CPU I/O 待ち平均 ${percent(report.cpu.iowait_average_percent)} ／ steal 平均 ${percent(report.cpu.steal_average_percent)} ／ ディスク計測 ${report.storage_samples} 回`, 'muted'));
+          if (!report.storage.length) details.append(make('p', 'ディスク残量は収集開始後から記録されます。この日の記録はありません。'));
+          else {
+            const [diskWrap, diskBody] = table(['マウント', '容量', '最新残量', '当日最小残量', '最大使用率', 'inode 使用率', '最終計測（日本時間）']);
+            for (const mount of report.storage) {
+              const row = make('tr');
+              [mount.mount, bytes(mount.total_bytes), bytes(mount.free_bytes), bytes(mount.min_free_bytes), percent(mount.max_used_percent), percent(mount.inode_used_percent),
+                new Date(mount.sampled_at).toLocaleString('ja-JP', {timeZone: 'Asia/Tokyo'})].forEach(value => row.append(make('td', value)));
+              diskBody.append(row);
+            }
+            details.append(diskWrap);
+          }
+          output.append(details);
+        }
+      }
+      async function load() {
+        reload.disabled = true; message.className = ''; message.textContent = 'レポートを読み込み中…';
+        try {
+          const response = await fetch(`${baseUrl}api/reports`, {signal: AbortSignal.timeout(12000)});
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'レポートの取得に失敗しました');
+          reports = data.reports;
+          const previousDay = daySelect.value; const previousServer = serverSelect.value;
+          daySelect.replaceChildren();
+          const today = new Date().toLocaleDateString('sv-SE', {timeZone: 'Asia/Tokyo'});
+          const day = new Date(`${today}T00:00:00Z`);
+          for (let i = 0; i < 7; i++) {
+            day.setUTCDate(day.getUTCDate() - 1);
+            const date = day.toISOString().slice(0, 10);
+            const option = make('option', `${date}${reports.some(r => r.report_date === date) ? '' : '（記録なし）'}`);
+            option.value = date; daySelect.append(option);
+          }
+          if ([...daySelect.options].some(o => o.value === previousDay)) daySelect.value = previousDay;
+          serverSelect.replaceChildren(make('option', 'すべて'));
+          serverSelect.options[0].value = '';
+          [...new Set(reports.map(r => r.server))].sort().forEach(name => { const option = make('option', name); option.value = name; serverSelect.append(option); });
+          if ([...serverSelect.options].some(o => o.value === previousServer)) serverSelect.value = previousServer;
+          render();
+        } catch (error) {
+          output.replaceChildren(); message.className = 'ng'; message.textContent = `${error.message}。「再読み込み」で再試行できます。`;
+        } finally { reload.disabled = false; }
+      }
+      daySelect.onchange = render; serverSelect.onchange = render; reload.onclick = load;
+      load();
+    })();
   </script>
 </body>
 </html>

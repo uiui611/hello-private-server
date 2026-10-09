@@ -67,6 +67,30 @@ class ReportsTest(unittest.TestCase):
         self.assertEqual(disk['min_free_bytes'], 30)
         self.assertEqual(disk['free_change_bytes'], -20)
 
+    def storage(self, stamp, free, device='/dev/vda1', mount='/'):
+        entry = dict(device=device, mount=mount, free_bytes=free, used_percent=100-free)
+        self.db.execute('INSERT OR REPLACE INTO samples VALUES (?, ?, ?, ?)',
+                        ('vm1', 'storage', stamp, json.dumps([entry])))
+
+    def test_disk_missing_previous_day_does_not_use_older_snapshot(self):
+        self.storage('2026-10-02T14:59:59+00:00', 100)  # Oct 2 JST, too old
+        self.storage('2026-10-03T15:00:00+00:00', 80)  # Oct 4 JST start
+        result = monitor.daily_report(self.db, self.server, dt.date(2026, 10, 4), ZoneInfo('Asia/Tokyo'))
+        self.assertIsNone(result['storage'][0]['free_change_bytes'])
+
+    def test_disk_previous_day_start_included_and_current_day_start_excluded(self):
+        self.storage('2026-10-02T15:00:00+00:00', 100)  # Oct 3 JST start
+        self.storage('2026-10-03T15:00:00+00:00', 80)  # Oct 4 JST start
+        result = monitor.daily_report(self.db, self.server, dt.date(2026, 10, 4), ZoneInfo('Asia/Tokyo'))
+        self.assertEqual(result['storage'][0]['free_change_bytes'], -20)
+
+    def test_disk_baseline_uses_latest_snapshot_and_matches_device_and_mount(self):
+        self.storage('2026-10-03T14:00:00+00:00', 100)
+        self.storage('2026-10-03T14:59:59+00:00', 90, device='/dev/vdb1')
+        self.storage('2026-10-03T15:00:00+00:00', 80)
+        result = monitor.daily_report(self.db, self.server, dt.date(2026, 10, 4), ZoneInfo('Asia/Tokyo'))
+        self.assertIsNone(result['storage'][0]['free_change_bytes'])
+
     def test_failed_publish_remains_retryable_and_success_is_idempotent(self):
         timezone = ZoneInfo('Asia/Tokyo')
         day = dt.datetime.now(timezone).date() - dt.timedelta(days=1)

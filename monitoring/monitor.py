@@ -140,11 +140,14 @@ def daily_report(db, server, day, timezone):
                 mounts[key] = dict(entry, min_free_bytes=min(previous['min_free_bytes'], entry['free_bytes']),
                                    max_used_percent=max(previous['max_used_percent'], entry['used_percent']),
                                    samples=previous['samples'] + 1, sampled_at=timestamp.isoformat())
+    prior_start = dt.datetime.combine(day - dt.timedelta(days=1), dt.time.min,
+                                      timezone).astimezone(UTC)
+    prior = db.execute("SELECT payload FROM samples WHERE server=? AND kind='storage' "
+                       'AND timestamp >= ? AND timestamp < ? ORDER BY timestamp DESC LIMIT 1',
+                       (server['name'], prior_start.isoformat(), start.isoformat())).fetchone()
+    baseline = {(p['device'], p['mount']): p for p in json.loads(prior[0])} if prior else {}
     for key, entry in mounts.items():
-        prior = db.execute("SELECT payload FROM samples WHERE server=? AND kind='storage' "
-                           'AND timestamp < ? ORDER BY timestamp DESC LIMIT 1',
-                           (server['name'], start.isoformat())).fetchone()
-        earlier = next((p for p in json.loads(prior[0]) if (p['device'], p['mount']) == key), None) if prior else None
+        earlier = baseline.get(key)
         entry['free_change_bytes'] = entry['free_bytes'] - earlier['free_bytes'] if earlier else None
     covered = min(86400, sum(coverage))
     return dict(schema_version=1, server=server['name'], kind=server.get('kind', 'vm'),

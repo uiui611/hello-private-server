@@ -28,11 +28,15 @@
     .bar > span { display: block; background: #55b2ff; height: 100%; border-radius: inherit; }
     .coverage-low { color: #ffd28e; } details { margin-top: 1rem; } summary { cursor: pointer; }
     .report-note { line-height: 1.7; }
+    .tools { margin-bottom: 1.5rem; } .tools a { color: #8ecbff; text-underline-offset: .2em; }
   </style>
 </head>
 <body>
   <h1>サーバー日次レポート</h1>
   <p class="lead">Ubuntu ホストと仮想サーバーの、直近7日間の利用状況です。</p>
+  <nav class="tools" aria-label="管理ツール">
+    <a href="/jobs/">JOB 管理画面を開く</a>
+  </nav>
   <section class="reports" aria-labelledby="reports-heading">
     <h2 id="reports-heading">1日のリソース使用状況</h2>
     <div class="filters">

@@ -707,7 +707,6 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-s3",
  "axum",
- "bytes",
  "futures-util",
  "serde",
  "serde_json",
